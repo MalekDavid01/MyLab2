@@ -1,0 +1,78 @@
+House Segmentation Service — Lab 2
+Docker Hub Image: https://hub.docker.com/r/dvdmalek/house-segmentation-service
+
+═══════════════════════════════════════════════════════
+ PREREQUISITES
+═══════════════════════════════════════════════════════
+  - Docker Desktop installed and running
+  - (For training only) Python 3.11+, GPU recommended
+
+═══════════════════════════════════════════════════════
+ OPTION A — Run the pre-built container (inference only)
+═══════════════════════════════════════════════════════
+
+Step 1: Pull the image
+    docker pull dvdmalek/house-segmentation-service:latest
+
+Step 2: Create a .env file from the template
+    cp .env.example .env
+    # Edit .env if needed (defaults work out of the box)
+
+Step 3: Run the container
+    docker run -p 5000:5000 --env-file .env dvdmalek/house-segmentation-service:latest
+
+Step 4: Test the health endpoint
+    curl http://localhost:5000/health
+
+Step 5: Send a prediction request
+    curl -X POST http://localhost:5000/predict \
+      -H "Content-Type: application/json" \
+      -d '{"image_url": "https://images.pexels.com/photos/1029613/pexels-photo-1029613.jpeg"}'
+
+  The response includes:
+    - house_pixels       : number of pixels classified as house
+    - coverage_percent   : % of image covered by houses
+    - mask_png_base64    : base64-encoded PNG of the binary segmentation mask
+
+═══════════════════════════════════════════════════════
+ OPTION B — Train from scratch
+═══════════════════════════════════════════════════════
+
+Step 1: Set up Python environment
+    python -m venv venv && source venv/bin/activate   # (or venv\Scripts\activate on Windows)
+    pip install -r requirements.txt
+
+Step 2: Download the SAM checkpoint
+    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+
+Step 3: Configure environment
+    cp .env.example .env   # edit values as needed
+
+Step 4: Prepare the dataset (generates train/val/test splits)
+    python prepare_dataset.py
+
+Step 5: Train the model
+    python train.py
+    # Checkpoints saved to checkpoints/best/
+    # Training history saved to checkpoints/history.json
+
+Step 6: Evaluate on the test set
+    python evaluate.py
+    # Metrics saved to eval_outputs/metrics.json
+    # Visualizations saved to eval_outputs/predictions_grid.png
+    #                         eval_outputs/training_curves.png
+
+Step 7: Run the server locally
+    python app.py
+
+═══════════════════════════════════════════════════════
+ CI/CD — GitHub Actions
+═══════════════════════════════════════════════════════
+  The pipeline runs automatically on push to `main`.
+  Add these secrets to your GitHub repo settings:
+    DOCKERHUB_USERNAME   → dvdmalek
+    DOCKERHUB_TOKEN      → your Docker Hub access token
+
+  Pipeline stages:
+    1. test          — pytest with coverage
+    2. build-and-push — Docker build → push to Docker Hub (main branch only)

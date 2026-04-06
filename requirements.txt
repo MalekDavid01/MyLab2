@@ -1,0 +1,14 @@
+flask
+waitress
+transformers>=4.38.0
+torch>=2.2.0
+torchvision
+Pillow
+numpy
+requests
+python-dotenv
+datasets>=2.14.0,<3.0.0
+matplotlib
+segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
+pytest
+pytest-cov

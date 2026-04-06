@@ -1,0 +1,32 @@
+# Secrets — NEVER commit
+.env
+
+# Dataset & model weights (large files)
+data/
+checkpoints/
+sam_vit_h_4b8939.pth
+eval_outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code internals
+.claude/
+
+# Lab1 reference copy (not part of this submission)
+Lab1/
