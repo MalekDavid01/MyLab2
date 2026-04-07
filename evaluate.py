@@ -87,10 +87,10 @@ def evaluate():
         std_dice =round(float(std_dice),  4),
         n_samples=len(iou_list),
     )
-    print("\n── Test Set Results ──────────────────────────────")
+    print("\n-- Test Set Results --")
     for k, v in results.items():
         print(f"  {k:<12}: {v}")
-    print("─────────────────────────────────────────────────\n")
+    print("---------------------\n")
 
     with open(OUTPUT_DIR / "metrics.json", "w") as f:
         json.dump(results, f, indent=2)
@@ -121,7 +121,7 @@ def evaluate():
     viz_path = OUTPUT_DIR / "predictions_grid.png"
     plt.savefig(viz_path, bbox_inches="tight", dpi=120)
     plt.close()
-    print(f"Visualization saved → {viz_path}")
+    print(f"Visualization saved -> {viz_path}")
 
     # ── Loss curves (from training history) ───────────────────────────────
     hist_path = Path(os.getenv("CHECKPOINT_DIR", "checkpoints")) / "history.json"
@@ -150,7 +150,7 @@ def evaluate():
         curve_path = OUTPUT_DIR / "training_curves.png"
         plt.savefig(curve_path, dpi=120)
         plt.close()
-        print(f"Training curves saved → {curve_path}")
+        print(f"Training curves saved -> {curve_path}")
 
 
 if __name__ == "__main__":

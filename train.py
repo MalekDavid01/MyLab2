@@ -165,7 +165,7 @@ def train():
             best_iou = mean_iou
             model.save_pretrained(CHECKPOINT_DIR / "best")
             processor.save_pretrained(CHECKPOINT_DIR / "best")
-            print(f"   ✓ New best IoU={best_iou:.4f} — checkpoint saved")
+            print(f"   >> New best IoU={best_iou:.4f} -- checkpoint saved")
 
     with open(CHECKPOINT_DIR / "history.json", "w") as f:
         json.dump(history, f, indent=2)
