@@ -1,6 +1,6 @@
 """
 Training script for aerial house segmentation.
-Fine-tunes SegFormer (nvidia/mit-b2) on the prepared dataset.
+Fine-tunes SegFormer (nvidia/mit-b0) on the prepared dataset.
 Tracks IoU and Dice score per epoch, saves best checkpoint.
 """
 
@@ -24,7 +24,7 @@ load_dotenv()
 # ── Config ────────────────────────────────────────────────────────────────────
 DATA_DIR        = Path(os.getenv("DATA_OUTPUT_DIR", "data"))
 CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints/best"))
-MODEL_NAME      = os.getenv("SEGFORMER_MODEL", "nvidia/mit-b2")
+MODEL_NAME      = os.getenv("SEGFORMER_MODEL", "nvidia/mit-b0")
 EPOCHS          = int(os.getenv("EPOCHS", "10"))
 BATCH_SIZE      = int(os.getenv("BATCH_SIZE", "8"))
 LR              = float(os.getenv("LEARNING_RATE", "6e-5"))
