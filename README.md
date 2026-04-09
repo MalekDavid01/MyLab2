@@ -41,7 +41,7 @@ Every script calls `load_dotenv()` at startup. The `.gitignore` excludes `.env`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CHECKPOINT_DIR` | `checkpoints/best/best` | Where the trained model is saved/loaded |
+| `CHECKPOINT_DIR` | `checkpoints/best` | Where the trained model is saved/loaded |
 | `PORT` | `5000` | Flask server port |
 | `SEGFORMER_MODEL` | `nvidia/mit-b0` | Base model for fine-tuning |
 | `EPOCHS` | `5` | Training epochs |
@@ -95,19 +95,19 @@ python train.py
 ```
 
 Fine-tunes `nvidia/mit-b0` (SegFormer) with a 2-class segmentation head (background / house).
-Optimizer: AdamW + cosine annealing. Best checkpoint saved to `checkpoints/best/best/`.
+Optimizer: AdamW + cosine annealing. Best checkpoint saved to `checkpoints/best/`.
 
 Actual training results (5 epochs, CPU, 63 training samples):
 
 | Epoch | Train Loss | Val Loss | Val IoU | Val Dice |
 |-------|-----------|---------|--------|---------|
-| 1 | 0.5761 | 0.5673 | 0.4984 | 0.6545 |
-| 2 | 0.4271 | 0.4380 | 0.5523 | 0.7049 |
-| 3 | 0.3653 | 0.4065 | 0.5597 | 0.7100 |
-| 4 | 0.3345 | 0.3443 | 0.5648 | 0.7160 |
-| 5 | 0.3211 | 0.3414 | 0.5625 | 0.7139 |
+| 1 | 0.6765 | 0.6589 | 0.2711 | 0.3970 |
+| 2 | 0.5432 | 0.5865 | 0.3484 | 0.4902 |
+| 3 | 0.4796 | 0.5035 | 0.3416 | 0.4913 |
+| 4 | 0.4677 | 0.4480 | 0.3420 | 0.4932 |
+| 5 | 0.4336 | 0.4225 | 0.3461 | 0.4981 |
 
-Best: epoch 4 -- Val IoU = 0.5648, Val Dice = 0.7160
+Best: epoch 2 -- Val IoU = 0.3484, Val Dice = 0.4902
 
 ---
 
@@ -120,8 +120,8 @@ python evaluate.py
 Runs the best checkpoint on `data/test/` (15 samples).
 
 **Test set results:**
-- Mean IoU: **0.4868** (+/- 0.2109)
-- Mean Dice: **0.6239** (+/- 0.2228)
+- Mean IoU: **0.4589** (+/- 0.2212)
+- Mean Dice: **0.5934** (+/- 0.2408)
 
 Outputs saved to `eval_outputs/`:
 - `predictions_grid.png` -- aerial image | ground truth mask | predicted mask
@@ -167,7 +167,7 @@ Mount the `checkpoints/` folder produced by `python train.py` at runtime.
 
 **GET /health**
 ```json
-{"status": "ok", "device": "cpu", "model": "checkpoints/best/best", "model_ready": true}
+{"status": "ok", "device": "cpu", "model": "checkpoints/best", "model_ready": true}
 ```
 
 **POST /predict**
@@ -188,6 +188,29 @@ curl -X POST http://localhost:5000/predict \
 
 Note: `/predict` does not return IoU or Dice -- those require a ground-truth mask.
 Run `python evaluate.py` to get segmentation metrics on the labelled test set.
+
+### Quick prediction smoke test
+
+Use this after starting the API locally or inside Docker to confirm inference works. The command is the same for both when the service is exposed on port 5000:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:5000/predict -Method Post -ContentType "application/json" -Body (@{ image_url = "https://images.pexels.com/photos/1029613/pexels-photo-1029613.jpeg" } | ConvertTo-Json)
+```
+
+Expected response fields:
+- `input`
+- `image_size`
+- `house_pixels`
+- `coverage_percent`
+- `mask_png_base64`
+
+If `/health` shows `model_ready: true` and `/predict` returns those fields, the API is working correctly.
+
+If you prefer to check the health endpoint first, use this same command for both local API and Docker:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:5000/health -Method Get
+```
 
 ---
 

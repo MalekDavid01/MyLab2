@@ -22,7 +22,7 @@ from transformers import SegformerForSemanticSegmentation, SegformerImageProcess
 load_dotenv()
 
 DATA_DIR        = Path(os.getenv("DATA_OUTPUT_DIR", "data"))
-CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints")) / "best"
+CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints/best"))
 OUTPUT_DIR      = Path(os.getenv("EVAL_OUTPUT_DIR", "eval_outputs"))
 BATCH_SIZE      = int(os.getenv("BATCH_SIZE", "8"))
 IMG_SIZE        = int(os.getenv("IMG_SIZE", "512"))
@@ -37,8 +37,13 @@ from train import HouseSegDataset, compute_metrics
 def evaluate():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    processor = SegformerImageProcessor.from_pretrained(str(CHECKPOINT_DIR))
-    model     = SegformerForSemanticSegmentation.from_pretrained(str(CHECKPOINT_DIR)).to(DEVICE)
+    model_dir = CHECKPOINT_DIR
+    if not (model_dir / "config.json").exists() and (model_dir / "best" / "config.json").exists():
+        # Backward compatibility for older runs that saved under <CHECKPOINT_DIR>/best.
+        model_dir = model_dir / "best"
+
+    processor = SegformerImageProcessor.from_pretrained(str(model_dir))
+    model     = SegformerForSemanticSegmentation.from_pretrained(str(model_dir)).to(DEVICE)
     model.eval()
 
     test_ds = HouseSegDataset("test", processor)
@@ -124,7 +129,9 @@ def evaluate():
     print(f"Visualization saved -> {viz_path}")
 
     # ── Loss curves (from training history) ───────────────────────────────
-    hist_path = Path(os.getenv("CHECKPOINT_DIR", "checkpoints")) / "history.json"
+    hist_path = CHECKPOINT_DIR / "history.json"
+    if not hist_path.exists() and (CHECKPOINT_DIR.parent / "history.json").exists():
+        hist_path = CHECKPOINT_DIR.parent / "history.json"
     if hist_path.exists():
         with open(hist_path) as f:
             history = json.load(f)

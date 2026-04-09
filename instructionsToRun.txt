@@ -19,7 +19,11 @@ Step 2: Create a .env file from the template
     # Edit .env if needed (defaults work out of the box)
 
 Step 3: Run the container
-    docker run -p 5000:5000 --env-file .env dvdmalek/house-segmentation-service:latest
+        docker run -p 5000:5000 --env-file .env -v ${PWD}/checkpoints:/app/checkpoints dvdmalek/house-segmentation-service:latest
+
+    Note:
+        - The image does not contain trained checkpoints.
+        - Run training first or provide an existing checkpoints folder.
 
 Step 4: Test the health endpoint
     curl http://localhost:5000/health

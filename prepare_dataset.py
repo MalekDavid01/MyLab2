@@ -23,6 +23,7 @@ Environment variables (via .env):
 import os
 import json
 import random
+import shutil
 import numpy as np
 from PIL import Image
 from pathlib import Path
@@ -168,6 +169,12 @@ def main():
     }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Ensure each run writes a clean dataset and does not leave stale files.
+    for split_name in splits:
+        split_dir = OUTPUT_DIR / split_name
+        if split_dir.exists():
+            shutil.rmtree(split_dir)
+
     manifest = {}
     for split_name, split_pairs in splits.items():
         manifest[split_name] = []

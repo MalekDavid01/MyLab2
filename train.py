@@ -23,7 +23,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DATA_DIR        = Path(os.getenv("DATA_OUTPUT_DIR", "data"))
-CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints"))
+CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints/best"))
 MODEL_NAME      = os.getenv("SEGFORMER_MODEL", "nvidia/mit-b2")
 EPOCHS          = int(os.getenv("EPOCHS", "10"))
 BATCH_SIZE      = int(os.getenv("BATCH_SIZE", "8"))
@@ -163,14 +163,14 @@ def train():
 
         if mean_iou > best_iou:
             best_iou = mean_iou
-            model.save_pretrained(CHECKPOINT_DIR / "best")
-            processor.save_pretrained(CHECKPOINT_DIR / "best")
+            model.save_pretrained(CHECKPOINT_DIR)
+            processor.save_pretrained(CHECKPOINT_DIR)
             print(f"   >> New best IoU={best_iou:.4f} -- checkpoint saved")
 
     with open(CHECKPOINT_DIR / "history.json", "w") as f:
         json.dump(history, f, indent=2)
     print(f"\nTraining complete. Best val IoU: {best_iou:.4f}")
-    print(f"Checkpoint: {CHECKPOINT_DIR / 'best'}")
+    print(f"Checkpoint: {CHECKPOINT_DIR}")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ Endpoints:
 import os
 import io
 import base64
+from pathlib import Path
 import requests
 import numpy as np
 from PIL import Image
@@ -32,6 +33,7 @@ processor        = None
 model            = None
 model_load_error = None
 _device          = None   # resolved on first model load
+_model_dir       = None   # resolved checkpoint path in use
 
 
 def _get_device() -> str:
@@ -45,7 +47,7 @@ def _get_device() -> str:
 
 def load_model_if_needed() -> bool:
     """Load model artifacts only when required, so import/tests don't hard-fail."""
-    global processor, model, model_load_error, _device
+    global processor, model, model_load_error, _device, _model_dir
 
     if processor is not None and model is not None:
         return True
@@ -57,9 +59,18 @@ def load_model_if_needed() -> bool:
             SegformerImageProcessor,
         )
         _device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Loading model from '{CHECKPOINT_DIR}' on {_device}...")
-        processor = SegformerImageProcessor.from_pretrained(CHECKPOINT_DIR, token=HF_TOKEN)
-        model     = SegformerForSemanticSegmentation.from_pretrained(CHECKPOINT_DIR, token=HF_TOKEN)
+        configured_dir = Path(CHECKPOINT_DIR)
+        if (configured_dir / "config.json").exists():
+            _model_dir = configured_dir
+        elif (configured_dir / "best" / "config.json").exists():
+            # Backward compatibility for older runs that saved under <CHECKPOINT_DIR>/best.
+            _model_dir = configured_dir / "best"
+        else:
+            _model_dir = configured_dir
+
+        print(f"Loading model from '{_model_dir}' on {_device}...")
+        processor = SegformerImageProcessor.from_pretrained(str(_model_dir), token=HF_TOKEN)
+        model     = SegformerForSemanticSegmentation.from_pretrained(str(_model_dir), token=HF_TOKEN)
         model.to(_device).eval()
         model_load_error = None
         print("Model ready.")
@@ -125,7 +136,7 @@ def health():
     response = {
         "status"     : "ok",
         "device"     : device,
-        "model"      : CHECKPOINT_DIR,
+        "model"      : str(_model_dir) if _model_dir else CHECKPOINT_DIR,
         "model_ready": model_ready,
     }
     if model_load_error:
