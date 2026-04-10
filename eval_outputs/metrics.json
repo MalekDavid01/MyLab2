@@ -1,0 +1,7 @@
+{
+  "mean_iou": 0.4589,
+  "std_iou": 0.2212,
+  "mean_dice": 0.5934,
+  "std_dice": 0.2408,
+  "n_samples": 15
+}
