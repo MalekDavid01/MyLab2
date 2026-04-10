@@ -1,4 +1,5 @@
 # Lab 2 - Aerial House Segmentation Service
+Github repo found here: https://github.com/MalekDavid01/MyLab2
 
 Extends Lab 1 (ResNet-50 image classifier) with:
 
@@ -24,6 +25,10 @@ Docker Hub image: `dvdmalek/house-segmentation-service`
 |-- Dockerfile
 |-- .env.example                  # Copy to .env and fill in your values
 |-- .github/workflows/ci-cd.yml   # GitHub Actions CI/CD pipeline
+|-- SCREENSHOTS/                  # Contains all screenshots required for submission
+|-- eval_outputs/                 # generated metrics and prediction figures
+|-- checkpoints/best/             # trained model artifacts needed for local inference
+|-- Lab2Report.pdf                # final report to submit
 ```
 
 ---
