@@ -31,21 +31,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
+# SAM checkpoint path used only when available locally.
 SAM_CHECKPOINT = os.getenv("SAM_CHECKPOINT_PATH", "sam_vit_h_4b8939.pth")
+# IoU threshold used to accept SAM segments against labelled bounding boxes.
 IOU_THRESHOLD  = float(os.getenv("IOU_THRESHOLD", "0.3"))
+# Desired split ratios for train/val/test.
 SPLIT_RATIOS   = (0.70, 0.15, 0.15)
+# Output directory where dataset folders and manifest are written.
 OUTPUT_DIR     = Path(os.getenv("DATA_OUTPUT_DIR", "data"))
+# Cap total number of source samples for faster experimentation.
 MAX_SAMPLES    = int(os.getenv("MAX_SAMPLES", "500"))
 RANDOM_SEED    = 42
 
 
-# ── Mask helpers (exact Week 7 logic) ────────────────────────────────────────
+# Mask helpers (exact Week 7 logic)
 def make_mask(labelled_bbox, image: Image.Image) -> np.ndarray:
     """
     Convert a bounding box [x_min, y_min, width, height] to a binary mask.
     Matches the make_mask() function from the Week 7 notebook exactly.
     """
+    # Convert float-like bbox coordinates into integer pixel coordinates.
     x_min, y_min, width, height = (int(v) for v in labelled_bbox)
     mask_instance = np.zeros((image.width, image.height))
     last_x = x_min + width
@@ -60,12 +66,14 @@ def build_sam_house_mask(example, sam_masks, image: Image.Image) -> np.ndarray:
     Merge all accepted segments into one combined binary mask.
     """
     combined = np.zeros((image.height, image.width), dtype=np.uint8)
+    # Compare each SAM region with each labelled bbox and merge accepted regions.
     for sam_m in sam_masks:
         sam_seg = sam_m["segmentation"].astype(int)
         for bbox in example["objects"]["bbox"]:
             label_seg = make_mask(bbox, image)
             intersection = np.sum(np.logical_and(sam_seg, label_seg))
             union        = np.sum(np.logical_or(sam_seg, label_seg))
+            # Guard union=0 to avoid division by zero.
             iou = intersection / union if union > 0 else 0.0
             if iou > IOU_THRESHOLD:
                 combined = np.logical_or(combined, sam_seg).astype(np.uint8)
@@ -79,27 +87,31 @@ def build_bbox_house_mask(example, image: Image.Image) -> np.ndarray:
     make_mask() logic as Week 7.
     """
     combined = np.zeros((image.height, image.width), dtype=np.uint8)
+    # Merge all bbox masks into one binary building mask.
     for bbox in example["objects"]["bbox"]:
         m = make_mask(bbox, image)
         combined = np.logical_or(combined, m).astype(np.uint8)
     return combined
 
 
-# ── I/O ───────────────────────────────────────────────────────────────────────
+# I/O
 def save_pair(image: Image.Image, mask: np.ndarray, dest: Path, stem: str):
+    # Persist one image/mask training pair using a consistent stem naming pattern.
     dest.mkdir(parents=True, exist_ok=True)
     image.save(dest / f"{stem}.jpg")
     Image.fromarray(mask * 255).save(dest / f"{stem}_mask.png")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
 def main():
+    # Make split generation reproducible across runs.
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     import torch
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # Decide whether to run SAM-enhanced mode or bbox fallback mode.
     use_sam = Path(SAM_CHECKPOINT).exists()
     if use_sam:
         print(f"[SAM] Checkpoint found: {SAM_CHECKPOINT}  (Week 7 method)")
@@ -118,6 +130,7 @@ def main():
     )
 
     all_examples = []
+    # Collect up to MAX_SAMPLES across HF dataset splits.
     for split_name in ds:
         for ex in ds[split_name]:
             all_examples.append(ex)
@@ -125,6 +138,7 @@ def main():
                 break
         if len(all_examples) >= MAX_SAMPLES:
             break
+    # Shuffle once before split generation.
     random.shuffle(all_examples)
     print(f"   Collected {len(all_examples)} samples")
 
@@ -145,12 +159,16 @@ def main():
         print(f"   [{i + 1}/{len(all_examples)}] processing...", end="\r")
         image = ex["image"].convert("RGB")
 
+        # Use SAM-enhanced masks when available; otherwise fall back to bbox masks.
         if use_sam:
+            # Generate SAM proposals, then keep proposals that overlap labelled boxes.
             sam_masks = mask_generator.generate(np.array(image))
             mask = build_sam_house_mask(ex, sam_masks, image)
         else:
+            # Pure bbox-derived mask generation path.
             mask = build_bbox_house_mask(ex, image)
 
+        # Drop no-building samples so the model sees positive class signal.
         if mask.sum() == 0:
             skipped += 1
             continue
@@ -159,9 +177,11 @@ def main():
     print(f"\n   Kept {len(pairs)} samples  ({skipped} skipped — no buildings)")
 
     print("[4/4] Splitting and saving...")
+    # Compute split boundaries from retained (non-empty-mask) samples.
     n       = len(pairs)
     n_train = int(n * SPLIT_RATIOS[0])
     n_val   = int(n * SPLIT_RATIOS[1])
+    # Keep deterministic split ordering after shuffle for reproducibility.
     splits  = {
         "train": pairs[:n_train],
         "val"  : pairs[n_train : n_train + n_val],
@@ -178,6 +198,7 @@ def main():
     manifest = {}
     for split_name, split_pairs in splits.items():
         manifest[split_name] = []
+        # Save each image/mask pair and track stems in a manifest for loaders.
         for j, (img, msk) in enumerate(split_pairs):
             stem = f"{split_name}_{j:04d}"
             save_pair(img, msk, OUTPUT_DIR / split_name, stem)
@@ -185,6 +206,7 @@ def main():
         print(f"   {split_name}: {len(split_pairs)} samples -> {OUTPUT_DIR / split_name}")
 
     with open(OUTPUT_DIR / "manifest.json", "w") as f:
+        # Manifest is consumed by train/evaluate scripts to load aligned pairs.
         json.dump(manifest, f, indent=2)
 
     print(f"\nDone! Dataset saved to: {OUTPUT_DIR}")

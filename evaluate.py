@@ -35,21 +35,26 @@ from train import HouseSegDataset, compute_metrics
 
 
 def evaluate():
+    # Ensure evaluation output directory exists before writing artifacts.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Resolve checkpoint path with backward compatibility for older nested layout.
     model_dir = CHECKPOINT_DIR
     if not (model_dir / "config.json").exists() and (model_dir / "best" / "config.json").exists():
         # Backward compatibility for older runs that saved under <CHECKPOINT_DIR>/best.
         model_dir = model_dir / "best"
 
+    # Load processor and model from resolved checkpoint directory.
     processor = SegformerImageProcessor.from_pretrained(str(model_dir))
     model     = SegformerForSemanticSegmentation.from_pretrained(str(model_dir)).to(DEVICE)
     model.eval()
 
+    # Build deterministic test loader from manifest.
     test_ds = HouseSegDataset("test", processor)
     _nw = 0 if os.name == "nt" else 4
     test_dl = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=_nw)
 
+    # Per-sample metric arrays used for mean/std summary statistics.
     iou_list, dice_list = [], []
     viz_data = []   # (image_path, gt_mask, pred_mask)
 
@@ -63,6 +68,7 @@ def evaluate():
             labels       = labels.to(DEVICE)
             outputs      = model(pixel_values=pixel_values)
 
+            # Upsample logits to label resolution before turning into class predictions.
             logits    = outputs.logits
             upsampled = F.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
             preds     = upsampled.argmax(dim=1)
@@ -72,6 +78,7 @@ def evaluate():
                 iou_list.append(iou)
                 dice_list.append(dice)
 
+                # Store a subset of examples for qualitative visualization.
                 if len(viz_data) < VIZ_SAMPLES:
                     stem     = test_stems[sample_idx]
                     img_path = DATA_DIR / "test" / f"{stem}.jpg"
@@ -80,6 +87,7 @@ def evaluate():
                                      preds[i].cpu().numpy()))
                 sample_idx += 1
 
+    # Aggregate summary metrics for report output.
     mean_iou  = np.mean(iou_list)
     mean_dice = np.mean(dice_list)
     std_iou   = np.std(iou_list)
@@ -97,15 +105,18 @@ def evaluate():
         print(f"  {k:<12}: {v}")
     print("---------------------\n")
 
+    # Save machine-readable metric summary for report reproducibility.
     with open(OUTPUT_DIR / "metrics.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    # ── Visualization grid ────────────────────────────────────────────────
+    # Visualization grid
     n   = len(viz_data)
+    # Plot aerial image, ground truth, and prediction side-by-side per sample.
     fig, axes = plt.subplots(n, 3, figsize=(12, 4 * n))
     if n == 1:
         axes = [axes]
 
+    # Add consistent column titles across rows.
     col_titles = ["Aerial Image", "Ground Truth Mask", "Predicted Mask"]
     for col, title in enumerate(col_titles):
         axes[0][col].set_title(title, fontsize=13, fontweight="bold", pad=10)
@@ -120,6 +131,7 @@ def evaluate():
         for ax in axes[row]:
             ax.axis("off")
 
+    # Include headline metrics in figure title for quick inspection.
     plt.suptitle(f"House Segmentation — Test Set  (mean IoU={mean_iou:.3f}, Dice={mean_dice:.3f})",
                  fontsize=14, y=1.01)
     plt.tight_layout()
@@ -128,11 +140,12 @@ def evaluate():
     plt.close()
     print(f"Visualization saved -> {viz_path}")
 
-    # ── Loss curves (from training history) ───────────────────────────────
+    # Loss curves (from training history)
     hist_path = CHECKPOINT_DIR / "history.json"
     if not hist_path.exists() and (CHECKPOINT_DIR.parent / "history.json").exists():
         hist_path = CHECKPOINT_DIR.parent / "history.json"
     if hist_path.exists():
+        # Generate report-friendly curves from saved training history.
         with open(hist_path) as f:
             history = json.load(f)
         epochs     = [r["epoch"]      for r in history]
@@ -143,11 +156,13 @@ def evaluate():
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
+        # Left chart: loss curves.
         ax1.plot(epochs, train_loss, label="Train Loss", color="#e74c3c")
         ax1.plot(epochs, val_loss,   label="Val Loss",   color="#3498db")
         ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
         ax1.set_title("Training & Validation Loss"); ax1.legend(); ax1.grid(alpha=0.3)
 
+        # Right chart: segmentation quality curves.
         ax2.plot(epochs, iou_curve,  label="Val IoU",  color="#2ecc71")
         ax2.plot(epochs, dice_curve, label="Val Dice", color="#9b59b6")
         ax2.set_xlabel("Epoch"); ax2.set_ylabel("Score")

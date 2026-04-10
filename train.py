@@ -21,10 +21,14 @@ import torch.nn.functional as F
 
 load_dotenv()
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
+# Root directory containing train/val/test folders and manifest.json.
 DATA_DIR        = Path(os.getenv("DATA_OUTPUT_DIR", "data"))
+# Checkpoint folder where best model artifacts and history are saved.
 CHECKPOINT_DIR  = Path(os.getenv("CHECKPOINT_DIR", "checkpoints/best"))
+# Base pretrained SegFormer model to fine-tune.
 MODEL_NAME      = os.getenv("SEGFORMER_MODEL", "nvidia/mit-b0")
+# Core hyperparameters read from .env for reproducible runs.
 EPOCHS          = int(os.getenv("EPOCHS", "10"))
 BATCH_SIZE      = int(os.getenv("BATCH_SIZE", "8"))
 LR              = float(os.getenv("LEARNING_RATE", "6e-5"))
@@ -35,9 +39,10 @@ DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
 NUM_LABELS      = 2   # background=0, house=1
 
 
-# ── Dataset ───────────────────────────────────────────────────────────────────
+# Dataset
 class HouseSegDataset(Dataset):
     def __init__(self, split: str, processor: SegformerImageProcessor):
+        # Load split membership from manifest so image/mask pairs stay aligned.
         self.processor = processor
         with open(DATA_DIR / "manifest.json") as f:
             stems = json.load(f)[split]
@@ -50,11 +55,13 @@ class HouseSegDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
+        # Read image and binary mask pair.
         img_path, msk_path = self.pairs[idx]
         image = Image.open(img_path).convert("RGB")
         mask  = np.array(Image.open(msk_path).convert("L"))
         mask  = (mask > 127).astype(np.int64)   # binary 0/1
 
+        # Apply SegFormer preprocessing pipeline (resize + normalize + tensor conversion).
         encoded = self.processor(
             images=image,
             return_tensors="pt",
@@ -71,32 +78,38 @@ class HouseSegDataset(Dataset):
         return pixel_values, label
 
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
+# Metrics
 def compute_metrics(preds: torch.Tensor, labels: torch.Tensor):
     """
     preds  : (N, H, W) int64 — predicted class per pixel
     labels : (N, H, W) int64 — ground truth
     Returns mean IoU and Dice for the house class (class=1).
     """
+    # Convert to binary vectors for house class only.
     pred_flat  = (preds  == 1).float().view(-1)
     label_flat = (labels == 1).float().view(-1)
 
     intersection = (pred_flat * label_flat).sum()
     union        = pred_flat.sum() + label_flat.sum() - intersection
 
+    # Add epsilon for numerical stability in rare empty-mask cases.
     iou  = (intersection + 1e-6) / (union + 1e-6)
     dice = (2 * intersection + 1e-6) / (pred_flat.sum() + label_flat.sum() + 1e-6)
     return iou.item(), dice.item()
 
 
-# ── Training loop ─────────────────────────────────────────────────────────────
+# Training loop
 def train():
+    # Ensure checkpoint directory exists before training starts.
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Processor handles image resizing/normalization expected by SegFormer.
     processor = SegformerImageProcessor.from_pretrained(MODEL_NAME, do_reduce_labels=False)
 
+    # Build train/validation loaders from manifest-defined dataset splits.
     train_ds = HouseSegDataset("train", processor)
     val_ds   = HouseSegDataset("val",   processor)
+    # Shuffle only train loader; validation loader remains deterministic.
     train_dl = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS, pin_memory=True)
     val_dl   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
 
@@ -109,16 +122,19 @@ def train():
     ).to(DEVICE)
 
     optimizer = AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+    # Cosine annealing provides a smooth LR decay across epochs.
     scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
+    # Store compact per-epoch values for report tables and plots.
     history = []
     best_iou = 0.0
 
     for epoch in range(1, EPOCHS + 1):
-        # ── Train ──────────────────────────────────────────────────────────
+        # Train
         model.train()
         train_loss = 0.0
         for pixel_values, labels in train_dl:
+            # Standard forward/backward/update training step.
             pixel_values = pixel_values.to(DEVICE)
             labels       = labels.to(DEVICE)
             outputs      = model(pixel_values=pixel_values, labels=labels)
@@ -127,10 +143,11 @@ def train():
             loss.backward()
             optimizer.step()
             train_loss  += loss.item()
+        # Mean train loss over mini-batches.
         train_loss /= len(train_dl)
         scheduler.step()
 
-        # ── Validate ───────────────────────────────────────────────────────
+        # Validate
         model.eval()
         val_loss  = 0.0
         iou_sum   = 0.0
@@ -142,6 +159,7 @@ def train():
                 outputs      = model(pixel_values=pixel_values, labels=labels)
                 val_loss    += outputs.loss.item()
 
+                # Upsample logits to label size before argmax and metric computation.
                 logits    = outputs.logits                          # (B, C, H/4, W/4)
                 upsampled = F.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
                 preds     = upsampled.argmax(dim=1)
@@ -149,10 +167,12 @@ def train():
                 iou_sum  += iou
                 dice_sum += dice
 
+        # Mean validation values over mini-batches.
         val_loss /= len(val_dl)
         mean_iou  = iou_sum  / len(val_dl)
         mean_dice = dice_sum / len(val_dl)
 
+        # Round for cleaner logs/report tables while keeping enough precision.
         row = dict(epoch=epoch, train_loss=round(train_loss,4),
                    val_loss=round(val_loss,4),
                    iou=round(mean_iou,4), dice=round(mean_dice,4))
@@ -162,11 +182,13 @@ def train():
               f"IoU={mean_iou:.4f}  Dice={mean_dice:.4f}")
 
         if mean_iou > best_iou:
+            # Save model and processor whenever validation IoU improves.
             best_iou = mean_iou
             model.save_pretrained(CHECKPOINT_DIR)
             processor.save_pretrained(CHECKPOINT_DIR)
             print(f"   >> New best IoU={best_iou:.4f} -- checkpoint saved")
 
+    # Persist per-epoch history for report tables and plotting.
     with open(CHECKPOINT_DIR / "history.json", "w") as f:
         json.dump(history, f, indent=2)
     print(f"\nTraining complete. Best val IoU: {best_iou:.4f}")
