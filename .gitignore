@@ -3,7 +3,9 @@
 
 # Dataset & model weights (large files)
 data/
-checkpoints/
+checkpoints/*
+!checkpoints/best/
+!checkpoints/best/**
 sam_vit_h_4b8939.pth
 
 # Python
