@@ -1,6 +1,3 @@
-# Secrets — NEVER commit
-.env
-
 # Dataset & model weights (large files)
 data/
 checkpoints/*
